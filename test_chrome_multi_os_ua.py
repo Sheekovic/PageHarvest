@@ -1,11 +1,16 @@
 """Deterministic regression tests: no live network requests."""
 from copy import deepcopy
+from dataclasses import FrozenInstanceError
+import json
+from pathlib import Path
+import tempfile
+import time
 import unittest
 from unittest.mock import MagicMock, patch
 
 import requests
 
-from chrome_multi_os_ua import CONFIG, UserAgentGenerator
+from chrome_multi_os_ua import CONFIG, UserAgentGenerator, profile, ua, _BUNDLED_VERSIONS
 
 
 def response(version="130.0.6723.58"):
@@ -55,7 +60,7 @@ class GeneratorTests(unittest.TestCase):
         for platform in CONFIG["OS_OPTIONS"]:
             self.assertTrue(generator.generate_user_agent(platform).startswith("Mozilla/5.0"))
             self.assertEqual(generator.get_dynamic_chrome_version(platform),
-                             CONFIG["FALLBACK_CHROME_VERSION"])
+                             _BUNDLED_VERSIONS[platform])
         self.get.assert_not_called()
 
     def test_full_version_opt_in(self):
@@ -116,7 +121,7 @@ class GeneratorTests(unittest.TestCase):
                 generator = UserAgentGenerator()
                 with self.assertLogs("chrome_multi_os_ua", level="WARNING"):
                     self.assertEqual(generator.get_dynamic_chrome_version(),
-                                     CONFIG["FALLBACK_CHROME_VERSION"])
+                                     _BUNDLED_VERSIONS["windows"])
                 generator.get_dynamic_chrome_version()
                 self.get.assert_called_once()
 
@@ -127,7 +132,7 @@ class GeneratorTests(unittest.TestCase):
                 self.get.return_value = response()
                 getattr(self.get.return_value, field).side_effect = error
                 self.assertEqual(UserAgentGenerator().get_dynamic_chrome_version(),
-                                 CONFIG["FALLBACK_CHROME_VERSION"])
+                                 _BUNDLED_VERSIONS["windows"])
 
     def test_malformed_api_payloads(self):
         for payload in (None, [], {}, {"versions": []}, {"versions": "bad"},
@@ -137,7 +142,7 @@ class GeneratorTests(unittest.TestCase):
             with self.subTest(payload=payload):
                 self.get.return_value.json.return_value = payload
                 self.assertEqual(UserAgentGenerator().get_dynamic_chrome_version(),
-                                 CONFIG["FALLBACK_CHROME_VERSION"])
+                                 _BUNDLED_VERSIONS["windows"])
 
     def test_interrupts_and_programming_errors_propagate(self):
         for error in (KeyboardInterrupt(), RuntimeError("bug")):
@@ -213,6 +218,137 @@ class GeneratorTests(unittest.TestCase):
         generator.get_dynamic_chrome_version()
         self.assertEqual(self.get.call_args.args[0], "https://example.com/versions")
         self.assertEqual(self.get.call_args.kwargs["timeout"], 2)
+
+    def test_simple_api_and_immutable_profile(self):
+        result = profile("android", chrome_version="130.0.6723.58")
+        self.assertEqual(ua("android", chrome_version="130.0.6723.58"), result.user_agent)
+        self.assertEqual(result.version_source, "pinned")
+        self.assertFalse(result.is_stale)
+        self.assertIsNone(result.checked_at)
+        with self.assertRaises(FrozenInstanceError):
+            result.user_agent = "changed"
+        self.get.assert_not_called()
+
+    def test_consistent_headers(self):
+        for platform, label in (("windows", "Windows"), ("mac", "macOS"),
+                                ("linux", "Linux"), ("android", "Android")):
+            result = profile(platform, chrome_version="130.0.6723.58")
+            self.assertEqual(result.headers(), {"User-Agent": result.user_agent})
+            headers = result.headers(client_hints=True)
+            self.assertEqual(headers["Sec-CH-UA-Platform"], f'"{label}"')
+            self.assertEqual(headers["Sec-CH-UA-Mobile"], "?1" if platform == "android" else "?0")
+            self.assertEqual(headers["Sec-CH-UA"], '"Chromium";v="130", "Google Chrome";v="130"')
+            headers["User-Agent"] = "changed"
+            self.assertEqual(result.headers()["User-Agent"], result.user_agent)
+
+    def test_unsupported_hints_are_omitted(self):
+        generator = UserAgentGenerator(chrome_version="130.0.6723.58")
+        for result in (generator.generate_profile("ios"),
+                       generator.generate_profile(custom_os="Custom OS"),
+                       profile("windows", chrome_version="80.0.0.1"),
+                       UserAgentGenerator({"OS_OPTIONS": {"windows": ["Other OS"]}},
+                                          offline=True).generate_profile()):
+            self.assertFalse(result.client_hints_supported)
+            self.assertEqual(result.headers(client_hints=True), {"User-Agent": result.user_agent})
+
+    def test_live_then_cached_metadata_and_snapshot_stability(self):
+        generator = UserAgentGenerator()
+        first = generator.generate_profile()
+        second = generator.generate_profile()
+        self.assertEqual(first.version_source, "live")
+        self.assertEqual(second.version_source, "cached")
+        self.assertFalse(second.is_stale)
+        generator.clear_cache()
+        self.get.return_value = response("131.0.1000.1")
+        self.assertEqual(generator.generate_profile().chrome_version, "131.0.1000.1")
+        self.assertIn('v="130"', first.headers(client_hints=True)["Sec-CH-UA"])
+
+    def test_default_helpers_share_cache(self):
+        with patch("chrome_multi_os_ua._default_generator", UserAgentGenerator()):
+            ua()
+            self.assertEqual(profile().version_source, "cached")
+            self.get.assert_called_once()
+
+    def test_bundled_and_custom_fallback_metadata(self):
+        result = profile("ios", offline=True)
+        self.assertEqual(result.version_source, "bundled")
+        self.assertEqual(result.chrome_version, _BUNDLED_VERSIONS["ios"])
+        with patch("chrome_multi_os_ua.time.time", return_value=result.checked_at + 3601):
+            self.assertTrue(profile("ios", offline=True).is_stale)
+        result = UserAgentGenerator({"FALLBACK_CHROME_VERSION": "120.0.6099.109"},
+                                    offline=True).generate_profile()
+        self.assertEqual(result.version_source, "fallback")
+        self.assertEqual(result.chrome_version, "120.0.6099.109")
+        self.assertTrue(result.is_stale)
+        self.get.assert_not_called()
+
+    def test_persistent_cache_and_offline_reuse(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first = UserAgentGenerator(cache_dir=directory).generate_profile("android")
+            self.get.reset_mock()
+            for offline in (False, True):
+                second = profile("android", offline=offline, cache_dir=directory)
+                self.assertEqual(second.user_agent, first.user_agent)
+                self.assertEqual(second.version_source, "cached")
+                self.assertFalse(second.is_stale)
+            self.get.assert_not_called()
+            self.assertEqual(len(list(Path(directory).glob("*.json"))), 1)
+
+    def test_stale_disk_outage_and_recovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            generator = UserAgentGenerator(cache_dir=directory)
+            generator.generate_profile()
+            path = next(Path(directory).glob("*.json"))
+            payload = json.loads(path.read_text())
+            payload["checked_at"] = time.time() - 7200
+            path.write_text(json.dumps(payload))
+            offline = profile(offline=True, cache_dir=directory)
+            self.assertTrue(offline.is_stale)
+            self.get.side_effect = requests.Timeout()
+            generator = UserAgentGenerator(cache_dir=directory)
+            stale = generator.generate_profile()
+            self.assertTrue(stale.is_stale)
+            self.assertEqual(stale.version_source, "cached")
+            self.assertEqual(stale.chrome_version, "130.0.6723.58")
+            self.assertEqual(json.loads(path.read_text()), payload)
+            self.get.side_effect = None
+            self.get.return_value = response("131.0.1000.1")
+            generator.clear_cache()
+            recovered = generator.generate_profile()
+            self.assertFalse(recovered.is_stale)
+            self.assertEqual(recovered.version_source, "live")
+            self.assertEqual(json.loads(path.read_text())["version"], "131.0.1000.1")
+
+    def test_bad_disk_data_is_ignored(self):
+        with tempfile.TemporaryDirectory() as directory:
+            generator = UserAgentGenerator(cache_dir=directory)
+            generator.generate_profile()
+            path = next(Path(directory).glob("*.json"))
+            for data in ("invalid", "[]", '{"schema":2}',
+                         json.dumps({"schema": 1, "version": "bad", "checked_at": time.time()}),
+                         json.dumps({"schema": 1, "version": "130.0.0.1", "checked_at": time.time() + 999}),
+                         json.dumps({"schema": 1, "version": "130.0.0.1", "checked_at": True})):
+                path.write_text(data)
+                with self.subTest(data=data):
+                    self.assertEqual(profile(offline=True, cache_dir=directory).version_source, "bundled")
+
+    def test_unwritable_cache_does_not_break_generation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "file"
+            path.write_text("not a directory")
+            result = profile(cache_dir=path)
+            self.assertEqual(result.version_source, "live")
+
+    def test_cache_endpoint_isolation_and_no_fallback_persistence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            profile(cache_dir=directory)
+            other = UserAgentGenerator({"CHROME_VERSION_API": "https://example.com/{platform}"},
+                                       cache_dir=directory, offline=True)
+            self.assertEqual(other.generate_profile().version_source, "bundled")
+        with tempfile.TemporaryDirectory() as directory:
+            self.get.side_effect = requests.Timeout()
+            self.assertEqual(profile(cache_dir=directory).version_source, "bundled")
+            self.assertEqual(list(Path(directory).iterdir()), [])
 
 
 if __name__ == "__main__":

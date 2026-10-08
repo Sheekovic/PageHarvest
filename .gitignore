@@ -6,3 +6,5 @@ dist/
 *.egg-info/
 .coverage
 .package-check/
+.package-check-v1/
+.pageharvest-cache/
