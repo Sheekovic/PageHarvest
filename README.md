@@ -6,6 +6,9 @@ PageHarvest combines HTML/JSON extraction, browser profiles, persistent HTTP ses
 bounded retries, polite crawling, and optional JavaScript rendering. It grew out of
 ChromeMultiOSUA; the old `chrome_multi_os_ua` import still works.
 
+**Start here:** [Documentation](docs/README.md) · [Quick start](docs/quickstart.md) ·
+[Practical recipes](docs/recipes.md) · [Runnable examples](docs/examples/README.md)
+
 ## Install
 
 Python 3.10 or newer:
