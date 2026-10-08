@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "urls": ["http://127.0.0.1:8000/catalog.html"],
+  "items": ".product",
+  "fields": {
+    "name": {"selector": "h2", "required": true},
+    "price": ".price",
+    "id": {"selector": ":scope", "attr": "data-id"}
+  },
+  "scraper": {"delay": 0.5},
+  "output": {"path": "products.csv", "format": "csv", "mode": "items"}
+}

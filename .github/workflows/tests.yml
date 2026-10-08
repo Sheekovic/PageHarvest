@@ -31,6 +31,6 @@ jobs:
           python-version: '3.13'
       - run: python -m pip install '.[render]'
       - run: python -m playwright install --with-deps chromium
-      - run: python -m unittest test_pageharvest -v
+      - run: python -m unittest test_pageharvest test_items_recipes -v
         env:
           PAGEHARVEST_TEST_RENDER: '1'

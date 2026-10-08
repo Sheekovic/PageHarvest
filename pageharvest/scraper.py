@@ -12,7 +12,7 @@ from urllib.robotparser import RobotFileParser
 
 import requests
 
-from .extract import Field, extract_html, normalize_fields
+from .extract import Field, extract_html, normalize_fields, normalize_items
 from .profiles import BrowserProfile, profile
 
 
@@ -58,10 +58,14 @@ class ScrapeResult:
     attempts: int = 0
     elapsed: float = 0
     data: object = None
+    items: list = field(default_factory=list)
+    item_errors: list = field(default_factory=list)
+    items_missing: bool = False
 
     @property
     def ok(self):
-        return self.error is None and 200 <= self.status_code < 300 and not self.missing_fields
+        return (self.error is None and 200 <= self.status_code < 300
+                and not self.missing_fields and not self.item_errors and not self.items_missing)
 
     def to_dict(self):
         return {**asdict(self), "ok": self.ok}
@@ -209,12 +213,13 @@ class Scraper:
                 raise _FetchError("retry_exhausted", url, attempts=attempts)
         raise _FetchError("too_many_redirects", url, attempts=attempts)
 
-    def scrape(self, url, *, fields=None, wait_for=None, _allowed_origin=None):
+    def scrape(self, url, *, fields=None, items=None, wait_for=None, _allowed_origin=None):
         """Fetch a page and return extracted data or a structured failure result."""
         if self._closed:
             raise RuntimeError("Scraper is closed")
         url = _url(url)
         fields = normalize_fields(fields)
+        items = normalize_items(items, fields)
         if wait_for is not None:
             Field(wait_for)  # Validate before network access.
         if self._credential_origin is None:
@@ -233,6 +238,8 @@ class Scraper:
                     result.data = json.loads(body)
                 except (ValueError, UnicodeError, RecursionError):
                     result.error = "invalid_json"
+                if items is not None:
+                    result.error = result.error or "items_require_html"
                 if fields:
                     result.warnings.append("CSS fields apply to HTML, not JSON responses")
                     result.missing_fields = [name for name, spec in fields.items() if spec.required]
@@ -241,6 +248,8 @@ class Scraper:
                 result.error = "unsupported_content_type"
                 return result
             if "text/plain" in content_type:
+                if items is not None:
+                    result.error = "items_require_html"
                 message = Message()
                 message["Content-Type"] = content_type
                 charset = message.get_content_charset() or "utf-8"
@@ -251,9 +260,10 @@ class Scraper:
                     result.text = body.decode("utf-8", errors="replace")
                 result.missing_fields = [name for name, spec in fields.items() if spec.required]
                 return result
-            extracted = extract_html(body, final_url, fields)
+            extracted = extract_html(body, final_url, fields, items)
             should_render = self.render == "always" or (self.render == "auto" and
-                             (extracted["needs_render"] or extracted["missing_fields"] or wait_for is not None))
+                             (extracted["needs_render"] or extracted["missing_fields"]
+                              or extracted["items_missing"] or extracted["item_errors"] or wait_for is not None))
             if should_render:
                 if self._renderer is None:
                     from .render import Renderer
@@ -270,7 +280,7 @@ class Scraper:
                     if not 200 <= result.status_code < 300:
                         result.error = f"http_{result.status_code}"
                         return result
-                    extracted = extract_html(html, rendered_url, fields)
+                    extracted = extract_html(html, rendered_url, fields, items)
                     extracted["warnings"].append("Rendered with a real browser engine using its native user agent")
                 except RuntimeError as exc:
                     result.error = "render_failed"
@@ -285,12 +295,13 @@ class Scraper:
         finally:
             result.elapsed = round(time.monotonic() - started, 3)
 
-    def scrape_many(self, urls, *, fields=None, wait_for=None):
+    def scrape_many(self, urls, *, fields=None, items=None, wait_for=None):
         """Yield results sequentially, retaining session cookies and pacing."""
         for url in urls:
-            yield self.scrape(url, fields=fields, wait_for=wait_for)
+            yield self.scrape(url, fields=fields, items=items, wait_for=wait_for)
 
-    def crawl(self, start_url, *, max_pages=10, max_depth=2, fields=None, pagination_only=False):
+    def crawl(self, start_url, *, max_pages=10, max_depth=2, fields=None, items=None,
+              pagination_only=False, wait_for=None):
         """Bounded same-origin crawl, or follow only rel=next pagination links.
 
         max_pages counts attempted pages including failures, excluding robots and
@@ -311,7 +322,7 @@ class Scraper:
             url, depth = queue.popleft()
             if url in visited:
                 continue
-            result = self.scrape(url, fields=fields, _allowed_origin=origin)
+            result = self.scrape(url, fields=fields, items=items, wait_for=wait_for, _allowed_origin=origin)
             count += 1
             visited.update((url, result.url))
             seen.add(result.url)
@@ -332,6 +343,7 @@ class Scraper:
 def scrape(url, **options):
     """One URL to structured data; use Scraper for shared sessions and crawling."""
     fields = options.pop("fields", None)
+    items = options.pop("items", None)
     wait_for = options.pop("wait_for", None)
     with Scraper(**options) as scraper:
-        return scraper.scrape(url, fields=fields, wait_for=wait_for)
+        return scraper.scrape(url, fields=fields, items=items, wait_for=wait_for)
