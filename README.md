@@ -2,6 +2,8 @@
 
 **Turn URLs into structured JSON or CSV, with one Python call or one terminal command.**
 
+[Visit the website and interactive playground](https://sheekovic.github.io/PageHarvest/)
+
 PageHarvest combines HTML/JSON extraction, browser profiles, persistent HTTP sessions,
 bounded retries, polite crawling, and optional JavaScript rendering. It grew out of
 ChromeMultiOSUA; the old `chrome_multi_os_ua` import still works.

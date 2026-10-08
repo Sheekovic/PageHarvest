@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Turn web pages into useful data. PageHarvest is a simple Python toolkit for structured extraction, reusable recipes, and JSON or CSV exports.">
+  <meta name="theme-color" content="#f6f5ef">
+  <meta property="og:title" content="PageHarvest — Good data starts here.">
+  <meta property="og:description" content="From web pages to structured JSON and CSV. A small, practical Python scraping toolkit.">
+  <meta property="og:type" content="website">
+  <title>PageHarvest — Good data starts here.</title>
+  <link rel="icon" href="mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav wrap">
+    <a class="brand" href="#" aria-label="PageHarvest home"><img src="mark.svg" width="32" height="32" alt="">PageHarvest<span class="version">v1.1</span></a>
+    <nav aria-label="Main navigation"><a href="#playground">Playground</a><a href="https://github.com/Sheekovic/PageHarvest/tree/main/docs">Docs <span aria-hidden="true">↗</span></a><a class="repo-link" href="https://github.com/Sheekovic/PageHarvest">GitHub <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <main id="main">
+    <section class="hero wrap">
+      <div class="hero-copy">
+        <a class="release" href="https://pypi.org/project/pageharvest/1.1.0/"><span class="dot"></span> NEW IN 1.1 <span class="release-detail">Items & saved recipes</span><span aria-hidden="true">↗</span></a>
+        <h1>Good data<br>starts <span class="serif">here.</span><svg class="underline" viewBox="0 0 230 16" aria-hidden="true"><path d="M3 12 Q100 0 226 8"/></svg></h1>
+        <p class="intro">The web is full of useful things.<br>Turn them into clean, structured data with a little Python and PageHarvest.</p>
+        <div class="hero-actions"><a class="button primary" href="#start">Start harvesting <span aria-hidden="true">↗</span></a><a class="text-link" href="#playground">See it in action <span aria-hidden="true">↓</span></a></div>
+        <div class="install"><code>pip install pageharvest</code><button class="copy" data-copy="pip install pageharvest" aria-label="Copy installation command">Copy</button></div>
+        <p class="micro">Python 3.10+ <span>·</span> No API key needed <span>·</span> Install in seconds</p>
+      </div>
+      <div class="hero-art" aria-label="An illustration of web content becoming structured data" role="img">
+        <div class="art-label">A LITTLE LESS MESS. A LOT MORE SIGNAL.</div>
+        <div class="source-card"><div class="window-bar"><i></i><i></i><i></i><span>the very wide web</span></div><div class="fake-heading"></div><div class="fake-line"></div><div class="fake-line short"></div><div class="tiles"><span></span><span></span><span></span></div><div class="fake-line"></div></div>
+        <div class="harvest-node"><img src="mark.svg" width="54" height="54" alt=""></div>
+        <div class="result-card"><div class="result-head"><span class="dot"></span> A little structure.</div><pre><span class="purple">{</span>
+  <span class="key">"name"</span>: <span class="value">"Something useful"</span>,
+  <span class="key">"price"</span>: <span class="value">"$24.00"</span>,
+  <span class="key">"ready"</span>: <span class="purple">true</span>
+<span class="purple">}</span></pre><div class="result-foot">EXTRACTED & READY TO USE <span>✓</span></div></div>
+        <span class="art-sticker">Less copy-paste.<br><em>More possibility.</em></span>
+      </div>
+    </section>
+    <div class="strip"><div class="wrap"><span>SMALL TOOL. USEFUL BUILDING BLOCKS.</span><span>HTML & JSON</span><span>Browser profiles</span><span>Saved recipes</span><span>JSON / CSV</span></div></div>
+    <section class="section wrap" id="playground">
+      <div class="section-heading"><div><p class="eyebrow">01 / TRY THE SHAPE OF IT</p><h2>A page goes in.<br><span class="serif">Possibilities come out.</span></h2></div><p>Choose a sample. Switch the output.<br>This interactive preview runs locally in your browser.</p></div>
+      <div class="playground">
+        <div class="demo-toolbar"><div class="segmented" role="group" aria-label="Sample content"><button data-sample="products" aria-pressed="true">Products</button><button data-sample="articles" aria-pressed="false">Articles</button><button data-sample="table" aria-pressed="false">Table rows</button></div><span class="sample-label"><span class="dot"></span> SAMPLE DATA · NO NETWORK REQUESTS</span></div>
+        <div class="demo-columns"><div class="sample-panel"><div class="panel-heading"><span>01 — SOURCE PAGE</span><code id="selector">.product</code></div><div id="sample-content"></div></div><div class="output-panel"><div class="panel-heading"><span>02 — YOUR DATA</span><div class="format-buttons" role="group" aria-label="Output format"><button data-format="json" aria-pressed="true">JSON</button><button data-format="csv" aria-pressed="false">CSV</button></div></div><pre id="output" tabindex="0" aria-label="Sample extraction output"></pre><div class="output-footer"><span id="record-count" aria-live="polite">3 records · structured & ready</span><button class="copy" id="copy-output">Copy output</button></div></div></div>
+        <p class="demo-note">A missing value stays with its own record. Nothing shifts onto the next product.</p>
+      </div>
+      <noscript><p>Enable JavaScript for the interactive sample, or <a href="https://github.com/Sheekovic/PageHarvest/blob/main/docs/items-and-recipes.md">read the extraction examples</a>.</p></noscript>
+    </section>
+    <section class="features wrap" aria-label="Features">
+      <article><span class="feature-number">↳ 01</span><h3>Give every item a row.</h3><p>Extract products, articles, or table rows with CSS selectors. Keep missing fields in place and inspect incomplete records.</p></article>
+      <article><span class="feature-number">↻ 02</span><h3>Find a workflow. Save it.</h3><p>Put URLs, fields, crawl limits, and output settings in one JSON recipe. Run the same job with a single command.</p></article>
+      <article><span class="feature-number">⌁ 03</span><h3>Ready for the real web.</h3><p>Shared sessions, bounded retries, robots.txt checks, and request pacing. Add optional browser rendering for JavaScript pages.</p></article>
+    </section>
+    <section class="start-section" id="start"><div class="wrap start-grid"><div><p class="eyebrow">02 / MAKE SOMETHING USEFUL</p><h2>Your first harvest.<br><span class="serif">Just a few lines.</span></h2><p>Start with one URL. Grow into repeatable jobs.<br>Use the terminal or make it part of your Python project.</p><a class="text-link" href="https://github.com/Sheekovic/PageHarvest/blob/main/docs/quickstart.md">Follow the quick start <span aria-hidden="true">↗</span></a><div class="setup-note"><span>NEED JAVASCRIPT RENDERING?</span><code>pip install "pageharvest[render]"<br>python -m playwright install chromium</code></div></div><div class="code-card"><div class="code-toolbar"><div class="code-tabs" role="group" aria-label="Code example"><button data-code="python" aria-pressed="true">Python</button><button data-code="cli" aria-pressed="false">Terminal</button><button data-code="recipe" aria-pressed="false">Recipe</button></div><button class="copy" id="copy-code">Copy</button></div><pre id="code-example" tabindex="0" aria-label="Usage example"></pre><div class="code-caption" id="code-caption"></div></div></div></section>
+    <section class="docs-section wrap"><div><p class="eyebrow">KEEP EXPLORING</p><h2>Small learning curve.<br><span class="serif">Room to grow.</span></h2></div><div class="doc-links"><a href="https://github.com/Sheekovic/PageHarvest/blob/main/docs/items-and-recipes.md"><span><strong>Items & recipes</strong><small>From a product list to a reusable workflow.</small></span><span aria-hidden="true">↗</span></a><a href="https://github.com/Sheekovic/PageHarvest/tree/main/docs/examples"><span><strong>Working examples</strong><small>A local demo site. Real scripts. A place to start.</small></span><span aria-hidden="true">↗</span></a><a href="https://github.com/Sheekovic/PageHarvest/issues"><span><strong>Build it with us</strong><small>Report a bug or suggest your next useful feature.</small></span><span aria-hidden="true">↗</span></a></div></section>
+  </main>
+  <footer class="wrap"><a class="brand" href="#"><img src="mark.svg" width="26" height="26" alt="">PageHarvest</a><span>A little structure goes a long way.</span><div><a href="https://pypi.org/project/pageharvest/">PyPI ↗</a><a href="https://github.com/Sheekovic/PageHarvest">GitHub ↗</a></div></footer>
+  <div id="announcement" class="sr-only" role="status"></div>
+</body>
+</html>
