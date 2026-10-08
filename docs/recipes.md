@@ -182,3 +182,8 @@ auth are restricted to the first scraped origin; cookie-jar cookies keep their
 domain scope. Scraper instances are synchronous and should not be shared across
 threads. Rendering transfers cookies, not custom Requests auth, proxies or
 headers, into the browser context.
+
+Cookie transfers preserve HttpOnly, Secure, expiry and SameSite attributes and
+reconcile deletions in both directions. Requests stores SameSite metadata but
+does not implement a browser's SameSite policy. Unscoped Requests cookies stay
+in the HTTP jar; partitioned browser cookies are not flattened into that jar.

@@ -28,6 +28,6 @@ jobs:
           python-version: '3.13'
       - run: python -m pip install '.[render]'
       - run: python -m playwright install --with-deps chromium
-      - run: python -m unittest test_pageharvest.ScrapingTests.test_real_browser_rendering -v
+      - run: python -m unittest test_pageharvest -v
         env:
           PAGEHARVEST_TEST_RENDER: '1'

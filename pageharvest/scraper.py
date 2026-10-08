@@ -3,6 +3,7 @@
 from collections import deque
 from dataclasses import asdict, dataclass, field
 from email.utils import parsedate_to_datetime
+from email.message import Message
 import json
 import math
 import time
@@ -240,7 +241,14 @@ class Scraper:
                 result.error = "unsupported_content_type"
                 return result
             if "text/plain" in content_type:
-                result.text = body.decode("utf-8", errors="replace")
+                message = Message()
+                message["Content-Type"] = content_type
+                charset = message.get_content_charset() or "utf-8"
+                try:
+                    result.text = body.decode(charset, errors="replace")
+                except (LookupError, ValueError):
+                    result.warnings.append("Unknown text charset; decoded as UTF-8")
+                    result.text = body.decode("utf-8", errors="replace")
                 result.missing_fields = [name for name, spec in fields.items() if spec.required]
                 return result
             extracted = extract_html(body, final_url, fields)

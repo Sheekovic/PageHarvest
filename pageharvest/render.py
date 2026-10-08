@@ -2,6 +2,8 @@
 
 from urllib.parse import urlsplit
 
+from requests.cookies import create_cookie
+
 
 class Renderer:
     def __init__(self, browser, timeout, max_bytes):
@@ -16,7 +18,7 @@ class Renderer:
         try:
             from playwright.sync_api import sync_playwright
         except ImportError as exc:
-            raise RuntimeError('Install rendering: pip install "pageharvest[render]"; '
+            raise RuntimeError('From the PageHarvest checkout, install rendering: pip install ".[render]"; '
                                'then python -m playwright install chromium') from exc
         try:
             self._playwright = sync_playwright().start()
@@ -27,18 +29,55 @@ class Renderer:
             raise RuntimeError(f"Could not start {self.engine_name}; run python -m playwright install "
                                f"{self.engine_name} ({type(exc).__name__})") from exc
 
+    def _import_cookies(self, session):
+        """The HTTP jar is authoritative at the start of each rendered request."""
+        session.cookies.clear_expired_cookies()
+        cookies = []
+        for cookie in session.cookies:
+            if not cookie.domain:
+                continue  # Requests-only unscoped cookies cannot be safely imported.
+            rest = {key.lower(): value for key, value in cookie._rest.items()}
+            item = {"name": cookie.name, "value": cookie.value, "domain": cookie.domain,
+                    "path": cookie.path or "/", "secure": cookie.secure,
+                    "httpOnly": "httponly" in rest and rest["httponly"] is not False}
+            if cookie.expires is not None:
+                item["expires"] = cookie.expires
+            same_site = str(rest.get("samesite", "")).capitalize()
+            if same_site in ("Strict", "Lax", "None"):
+                item["sameSite"] = same_site
+            cookies.append(item)
+        self._context.clear_cookies()
+        if cookies:
+            self._context.add_cookies(cookies)
+
+    def _export_cookies(self, session):
+        """Replace scoped HTTP cookies so browser-side deletions stay deleted."""
+        cookies = [cookie for cookie in session.cookies if not cookie.domain]
+        for item in self._context.cookies():
+            if item.get("partitionKey"):
+                # Requests cannot represent partitioned browser cookies safely.
+                continue
+            rest = {}
+            if item.get("httpOnly"):
+                rest["HttpOnly"] = None
+            if item.get("sameSite"):
+                rest["SameSite"] = item["sameSite"]
+            expires = item.get("expires", -1)
+            expires = int(expires) if expires > 0 else None
+            cookie = create_cookie(item["name"], item["value"], domain=item["domain"],
+                                   path=item["path"], secure=item["secure"], expires=expires,
+                                   discard=expires is None, rest=rest)
+            cookie.domain_specified = item["domain"].startswith(".")
+            cookies.append(cookie)
+        session.cookies.clear()
+        for cookie in cookies:
+            session.cookies.set_cookie(cookie)
+
     def fetch(self, url, session, *, wait_for=None, allowed_origin=None, allowed=None):
         self._start()
         page = None
         try:
-            cookies = []
-            for cookie in session.cookies:
-                if cookie.domain:
-                    cookies.append({"name": cookie.name, "value": cookie.value,
-                                    "domain": cookie.domain, "path": cookie.path or "/",
-                                    "secure": cookie.secure})
-            if cookies:
-                self._context.add_cookies(cookies)
+            self._import_cookies(session)
             page = self._context.new_page()
 
             def route_request(route):
@@ -64,9 +103,6 @@ class Renderer:
             html = page.content()
             if len(html.encode("utf-8")) > self.max_bytes:
                 raise RuntimeError("Rendered HTML exceeds max_bytes")
-            for cookie in self._context.cookies():
-                session.cookies.set(cookie["name"], cookie["value"], domain=cookie["domain"],
-                                    path=cookie["path"], secure=cookie["secure"])
             return html, page.url, response.status if response else None
         except RuntimeError:
             raise
@@ -75,7 +111,13 @@ class Renderer:
                                "check browser installation, navigation rules, and wait_for") from exc
         finally:
             if page is not None:
-                page.close()
+                try:
+                    # Also reconcile logout/expiry if a subsequent selector wait fails.
+                    self._export_cookies(session)
+                except Exception as exc:
+                    raise RuntimeError("Could not synchronize browser cookies") from exc
+                finally:
+                    page.close()
 
     def close(self):
         try:

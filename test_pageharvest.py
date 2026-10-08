@@ -8,13 +8,17 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import time
 from threading import Thread
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+import requests
 
 from pageharvest import Field, Scraper, export_csv, export_json, profile, scrape, ua
 from pageharvest.cli import main
 from pageharvest.extract import extract_html
+from pageharvest.render import Renderer
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -26,6 +30,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.hits[self.path] += 1
         status, content_type, extra = 200, "text/html; charset=utf-8", {}
+        encoding = "utf-8"
         body = "<html><title>Example</title><main><h1>Useful page</h1><p>Hello world.</p></main></html>"
         if self.path == "/robots.txt":
             content_type = "text/plain"
@@ -64,6 +69,14 @@ class Handler(BaseHTTPRequestHandler):
             extra = {"Set-Cookie": "sample=yes; Path=/"}
         elif self.path == "/cookie-check":
             body = "<main>" + self.headers.get("Cookie", "missing") + "</main>"
+        elif self.path == "/cookie-visibility":
+            body = '<main id="seen"></main><script>document.getElementById("seen").textContent = document.cookie || "empty";</script>'
+        elif self.path == "/cookie-delete":
+            body = '<main>Logged out</main><script>document.cookie="removed_browser=; Max-Age=0; path=/";</script>'
+        elif self.path == "/latin-text":
+            content_type, encoding, body = 'text/plain; charset="iso-8859-1"', "iso-8859-1", "caf\u00e9 d\u00e9j\u00e0 vu"
+        elif self.path == "/unknown-charset":
+            content_type, body = "text/plain; charset=unknown-encoding", "Hello \u2603"
         elif self.path == "/json":
             content_type, body = "application/json", '{"items":[{"name":"Book"}]}'
         elif self.path == "/bad-json":
@@ -76,7 +89,7 @@ class Handler(BaseHTTPRequestHandler):
             body = '''<html><title>Dynamic</title><body><div id="root"></div>
                 <script>setTimeout(() => { document.getElementById('root').innerHTML =
                 '<h1 id="loaded">Rendered content</h1>'; }, 100);</script></body></html>'''
-        encoded = body.encode("utf-8")
+        encoded = body.encode(encoding)
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(encoded)))
@@ -192,6 +205,15 @@ class ScrapingTests(unittest.TestCase):
         self.assertEqual(scrape(self.base + "/bad-json", delay=0).error, "invalid_json")
         self.assertEqual(scrape(self.base + "/binary", delay=0).error, "unsupported_content_type")
 
+    def test_plain_text_honors_charset_and_invalid_charset_fallback(self):
+        result = scrape(self.base + "/latin-text", delay=0)
+        self.assertTrue(result.ok)
+        self.assertEqual(result.text, "caf\u00e9 d\u00e9j\u00e0 vu")
+        result = scrape(self.base + "/unknown-charset", delay=0)
+        self.assertTrue(result.ok)
+        self.assertEqual(result.text, "Hello \u2603")
+        self.assertIn("Unknown text charset", result.warnings[0])
+
     def test_response_size_is_bounded(self):
         self.assertEqual(scrape(self.base + "/huge", max_bytes=100, delay=0).error, "response_too_large")
 
@@ -239,6 +261,64 @@ class ScrapingTests(unittest.TestCase):
         self.assertTrue(result.ok, result.to_dict())
         self.assertTrue(result.rendered)
         self.assertEqual(result.fields["heading"], "Rendered content")
+
+    @unittest.skipUnless(os.environ.get("PAGEHARVEST_TEST_RENDER") == "1", "Enable real browser integration explicitly")
+    def test_real_browser_cookie_protection_and_deletions(self):
+        with Scraper(delay=0, render="always", timeout=3) as scraper:
+            expires = int(time.time()) + 3600
+            scraper.session.cookies.set("auth", "protected", domain="127.0.0.1", path="/",
+                                        expires=expires, rest={"HttpOnly": None, "SameSite": "Strict"})
+            scraper.session.cookies.set("visible", "yes", domain="127.0.0.1", path="/", rest={})
+            first = scraper.scrape(self.base + "/cookie-visibility", fields={"seen": "#seen"})
+            self.assertTrue(first.ok, first.to_dict())
+            self.assertNotIn("auth=", first.fields["seen"])
+            self.assertIn("visible=yes", first.fields["seen"])
+            restored = next(cookie for cookie in scraper.session.cookies if cookie.name == "auth")
+            self.assertTrue(restored.has_nonstandard_attr("HttpOnly"))
+            self.assertEqual(restored.get_nonstandard_attr("SameSite"), "Strict")
+            self.assertEqual(restored.expires, expires)
+            scraper.session.cookies.clear("127.0.0.1", "/", "visible")
+            second = scraper.scrape(self.base + "/cookie-visibility", fields={"seen": "#seen"})
+            self.assertTrue(second.ok, second.to_dict())
+            self.assertEqual(second.fields["seen"], "empty")
+            scraper.session.cookies.set("removed_browser", "yes", domain="127.0.0.1", path="/", rest={})
+            deleted = scraper.scrape(self.base + "/cookie-delete")
+            self.assertTrue(deleted.ok, deleted.to_dict())
+            self.assertNotIn("removed_browser", scraper.session.cookies)
+            scraper.render = "never"
+            self.assertNotIn("removed_browser", scraper.scrape(self.base + "/cookie-check").text)
+
+
+class CookieTransferTests(unittest.TestCase):
+    def test_cookie_flags_expiry_and_reconciliation(self):
+        renderer = Renderer("chrome", 1, 1000)
+        renderer._context = MagicMock()
+        with requests.Session() as session:
+            expires = int(time.time()) + 3600
+            session.cookies.set("auth", "value", domain="example.com", path="/account", secure=True,
+                                expires=expires, rest={"httponly": None, "samesite": "strict"})
+            session.cookies.set("expired", "old", domain="example.com", expires=1)
+            session.cookies.set("unscoped", "keep", rest={})
+            renderer._import_cookies(session)
+            renderer._context.clear_cookies.assert_called_once()
+            imported = renderer._context.add_cookies.call_args.args[0]
+            self.assertEqual(imported, [{"name": "auth", "value": "value", "domain": "example.com",
+                "path": "/account", "secure": True, "httpOnly": True, "expires": expires, "sameSite": "Strict"}])
+            renderer._context.cookies.return_value = [dict(imported[0], name="new_session", expires=-1)]
+            renderer._export_cookies(session)
+            self.assertNotIn("auth", session.cookies)
+            self.assertIn("unscoped", session.cookies)
+            saved = next(cookie for cookie in session.cookies if cookie.name == "new_session")
+            self.assertTrue(saved.secure)
+            self.assertTrue(saved.has_nonstandard_attr("HttpOnly"))
+            self.assertEqual(saved.get_nonstandard_attr("SameSite"), "Strict")
+            self.assertIsNone(saved.expires)
+            self.assertFalse(saved.domain_specified)
+            session.cookies.clear("example.com", "/account", "new_session")
+            renderer._context.reset_mock()
+            renderer._import_cookies(session)
+            renderer._context.clear_cookies.assert_called_once()
+            renderer._context.add_cookies.assert_not_called()
 
 
 class ProfileTests(unittest.TestCase):
