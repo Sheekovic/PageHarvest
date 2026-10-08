@@ -71,6 +71,25 @@ with spaces; attribute values are returned as written in the HTML.
 Missing optional fields become `None` or `[]`; missing required fields make
 `page.ok` false. Invalid selectors fail before network access.
 
+## One record per product
+
+```python
+from pageharvest import Field, scrape, export_csv
+
+page = scrape("https://example.com/products", items=".product", fields={
+    "name": Field("h2", required=True),
+    "price": Field(".price"),
+    "id": Field(":scope", attr="data-id"),
+})
+export_csv(page.items, "products.csv", columns=["name", "price", "id"])
+print(page.item_errors)
+```
+
+Each matching container becomes one record. Missing fields stay with their own
+record. Save URLs, selectors and output settings in a JSON recipe, then run
+`pageharvest --recipe products.recipe.json`.
+See [items and saved recipes](docs/items-and-recipes.md) for a working local example.
+
 ## Sessions, crawling and export
 
 ```python

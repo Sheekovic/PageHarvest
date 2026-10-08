@@ -22,6 +22,12 @@ the page needs JavaScript. Use a selector appropriate to that page.
 
 ## Local demo site
 
+The [saved products recipe](products.recipe.json) extracts one row per product.
+After starting the server below, run
+`pageharvest --recipe docs/examples/products.recipe.json`.
+It writes `docs/examples/products.csv`; see
+[items and recipes](../items-and-recipes.md) for details and Python examples.
+
 ```sh
 python -m http.server 8000 --bind 127.0.0.1 --directory docs/examples/site
 ```

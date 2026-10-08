@@ -44,6 +44,20 @@ class Handler(BaseHTTPRequestHandler):
                 <a href="mailto:test@example.com">Email</a></main><footer>Footer noise</footer></body></html>'''
         elif self.path == "/page2":
             body = '<main><h1>Second</h1><a href="/">Home</a><a href="/page3">Third</a></main>'
+        elif self.path == "/items":
+            body = '''<main><span class="price">Outside</span>
+                <article class="product" data-id="a"><h2>First</h2><a href="/first">Details</a>
+                <span class="tag">One</span><span class="tag">Two</span></article>
+                <article class="product" data-id="b"><h2>Second</h2><span class="price">$20</span>
+                <a href="/second">Details</a></article><a href="/items-next" rel="next">Next</a></main>'''
+        elif self.path == "/items-next":
+            body = '<main><article class="product"><h2>Third</h2><span class="price">$30</span></article></main>'
+        elif self.path == "/js-items":
+            body = '''<main><p>This page has enough initial content to avoid the sparse-page heuristic.
+                Here is a detailed introductory paragraph, but the actual products are loaded later.</p></main>
+                <script>setTimeout(() => { document.querySelector('main').innerHTML +=
+                '<article class="product"><h2>Dynamic item</h2><span class="price">$40</span></article>';
+                }, 100);</script>'''
         elif self.path == "/retry":
             status = 503 if self.hits[self.path] == 1 else 200
             extra = {"Retry-After": "0"}

@@ -47,7 +47,35 @@ def normalize_fields(fields):
     return result
 
 
-def extract_html(content, url, fields):
+def normalize_items(items, fields):
+    if items is not None:
+        Field(items)  # Share CSS validation with fields.
+        if not fields:
+            raise ValueError("items requires at least one field")
+    return items
+
+
+def _extract_fields(root, fields):
+    extracted, missing = {}, []
+    for name, spec in fields.items():
+        nodes = [root] if spec.selector.strip() == ":scope" else root.select(spec.selector)
+        values = []
+        for node in nodes:
+            value = node.get(spec.attr) if spec.attr else node.get_text(" ", strip=True)
+            if isinstance(value, list):
+                value = " ".join(value)
+            if value is not None:
+                values.append(value)
+        value = values if spec.many else (values[0] if values else None)
+        extracted[name] = value
+        # Validate the value actually returned, not a later matching node.
+        selected = values if spec.many else values[:1]
+        if spec.required and not any(value.strip() for value in selected):
+            missing.append(name)
+    return extracted, missing
+
+
+def extract_html(content, url, fields, items=None):
     soup = BeautifulSoup(content, "html.parser")
     warnings = []
     title = soup.title.get_text(" ", strip=True) if soup.title else ""
@@ -85,20 +113,22 @@ def extract_html(content, url, fields):
             links.append(link)
     next_link = soup.select_one('a[rel~="next"], link[rel~="next"]')
     next_url = resolve_link(base_url, next_link.get("href", "")) if next_link else None
-    extracted = {}
-    missing = []
-    for name, field in fields.items():
-        nodes = soup.select(field.selector)
-        values = []
-        for node in nodes:
-            value = node.get(field.attr) if field.attr else node.get_text(" ", strip=True)
-            if isinstance(value, list):
-                value = " ".join(value)
-            if value is not None:
-                values.append(value)
-        extracted[name] = values if field.many else (values[0] if values else None)
-        if field.required and not any(value.strip() for value in values):
-            missing.append(name)
+    extracted, missing, records, item_errors = {}, [], [], []
+    if items is None:
+        extracted, missing = _extract_fields(soup, fields)
+    else:
+        for index, container in enumerate(soup.select(items)):
+            # A detached copy confines selector traversal to this item, including
+            # sibling combinators such as :scope + .product .price.
+            local = BeautifulSoup(str(container), "html.parser").find()
+            record, missing_names = _extract_fields(local, fields)
+            records.append(record)
+            if missing_names:
+                item_errors.append({"index": index, "missing_fields": missing_names})
+        if not records:
+            warnings.append(f"No items matched selector: {items}")
+        if item_errors:
+            warnings.append(f"Required fields missing in {len(item_errors)} item(s); see item_errors")
     has_scripts = bool(soup.find("script", src=True) or soup.select_one("#root, #app, #__next"))
     for node in soup.select("script, style, noscript, template, nav, footer, header"):
         node.decompose()
@@ -112,4 +142,5 @@ def extract_html(content, url, fields):
         warnings.append("Required fields missing: " + ", ".join(missing))
     return dict(title=title, text=text, links=links, metadata=metadata,
                 structured_data=structured, fields=extracted, warnings=warnings,
-                needs_render=needs_render, missing_fields=missing, next_url=next_url)
+                needs_render=needs_render, missing_fields=missing, next_url=next_url,
+                items=records, item_errors=item_errors, items_missing=items is not None and not records)
