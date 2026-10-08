@@ -18,7 +18,7 @@ class Renderer:
         try:
             from playwright.sync_api import sync_playwright
         except ImportError as exc:
-            raise RuntimeError('From the PageHarvest checkout, install rendering: pip install ".[render]"; '
+            raise RuntimeError('Install rendering: pip install "pageharvest[render]"; '
                                'then python -m playwright install chromium') from exc
         try:
             self._playwright = sync_playwright().start()

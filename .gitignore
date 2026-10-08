@@ -8,3 +8,6 @@ dist/
 .package-check/
 .package-check-v1/
 .pageharvest-cache/
+release-dist/
+.publish-venv/
+.pypi-check/

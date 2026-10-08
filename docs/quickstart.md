@@ -1,18 +1,22 @@
 # Quick start
 
-## 1. Install from GitHub
+## 1. Install
 
 Use Python 3.10 or newer. Run these commands in PowerShell or your terminal:
 
 ```sh
-git clone https://github.com/Sheekovic/PageHarvest.git
-cd PageHarvest
-python -m pip install .
+python -m pip install pageharvest
 ```
 
-Keep the following terminal commands in the repository directory. The package
-is not published to PyPI; install from this checkout rather than a similarly
-named third-party package.
+For the included local demo and runnable scripts, also download the repository:
+
+```sh
+git clone https://github.com/Sheekovic/PageHarvest.git
+cd PageHarvest
+```
+
+Keep the following terminal commands in the repository directory. To develop
+from source instead, run `python -m pip install .` in that directory.
 
 ## 2. Try the included local website
 
@@ -76,7 +80,7 @@ required fields; check `page.ok`, not just `page.status_code`.
 
 | Result | Next step |
 | --- | --- |
-| `ModuleNotFoundError: pageharvest` | Run `python -m pip install .` with the same Python used to run your script |
+| `ModuleNotFoundError: pageharvest` | Run `python -m pip install pageharvest` with the same Python used to run your script |
 | `robots_disallowed_or_unavailable` | Inspect the site's robots.txt; disallowed or unavailable rules stop fetching |
 | `http_401` / `http_403` | The server denied access; browser rendering is not a login or challenge bypass |
 | `retry_after_exceeds_limit` | The server requested a longer wait than configured; retry later |

@@ -1,0 +1,57 @@
+name: Package
+on:
+  push:
+  pull_request:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: false
+        default: ''
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install build twine
+      - name: Check requested version
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          python - <<'PY'
+          import ast, os, pathlib, tomllib
+          project = tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']
+          requested = os.environ.get('REQUESTED_VERSION')
+          if requested and requested != project['version']:
+              raise SystemExit('Requested version does not match pyproject.toml')
+          tree = ast.parse(pathlib.Path('pageharvest/__init__.py').read_text())
+          version = next(ast.literal_eval(node.value) for node in tree.body
+                         if isinstance(node, ast.Assign)
+                         and any(isinstance(t, ast.Name) and t.id == '__version__' for t in node.targets))
+          if version != project['version']:
+              raise SystemExit('Package and project versions differ')
+          print('Building', project['name'], version)
+          PY
+      - name: Build source archive and wheel
+        run: python -m build --outdir release-dist
+      - run: python -m twine check --strict release-dist/*
+      - name: Install the built wheel
+        run: python -m pip install release-dist/*.whl
+      - name: Verify installation outside the source tree
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -c "from pageharvest import profile, Scraper; from chrome_multi_os_ua import UserAgentGenerator; print(profile(offline=True).user_agent); print(UserAgentGenerator(offline=True).generate_user_agent())"
+          python -m pageharvest --help
+          pageharvest --help
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: python-distributions
+          path: release-dist/*
+          if-no-files-found: error

@@ -84,10 +84,10 @@ JSON responses populate `page.data`; embedded HTML JSON-LD populates
 
 ## Render JavaScript pages
 
-Install browser support from the repository directory:
+Install browser support:
 
 ```sh
-python -m pip install ".[render]"
+python -m pip install "pageharvest[render]"
 python -m playwright install chromium
 ```
 

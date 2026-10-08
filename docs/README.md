@@ -9,6 +9,7 @@ demo, Python usage, and JSON/CSV output without needing a third-party website.
 | [Recipes](recipes.md) | CSS fields, crawling, pagination, JSON, browser rendering and profiles |
 | [Runnable examples](examples/README.md) | Python scripts and a tiny local demo website |
 | [Legacy API](legacy-api.md) | Existing ChromeMultiOSUA imports and settings |
+| [Publishing](publishing.md) | Maintainer instructions for releasing updates to PyPI |
 
 The [main README](../README.md) contains the browser/platform support table,
 default limits, and behavior details.

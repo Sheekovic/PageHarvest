@@ -6,12 +6,20 @@ PageHarvest combines HTML/JSON extraction, browser profiles, persistent HTTP ses
 bounded retries, polite crawling, and optional JavaScript rendering. It grew out of
 ChromeMultiOSUA; the old `chrome_multi_os_ua` import still works.
 
-**Start here:** [Documentation](docs/README.md) · [Quick start](docs/quickstart.md) ·
-[Practical recipes](docs/recipes.md) · [Runnable examples](docs/examples/README.md)
+**Start here:** [Documentation](https://github.com/Sheekovic/PageHarvest/tree/main/docs) ·
+[Quick start](https://github.com/Sheekovic/PageHarvest/blob/main/docs/quickstart.md) ·
+[Practical recipes](https://github.com/Sheekovic/PageHarvest/blob/main/docs/recipes.md) ·
+[Runnable examples](https://github.com/Sheekovic/PageHarvest/tree/main/docs/examples)
 
 ## Install
 
 Python 3.10 or newer:
+
+```sh
+python -m pip install pageharvest
+```
+
+To work with the source and included examples:
 
 ```sh
 git clone https://github.com/Sheekovic/PageHarvest.git
@@ -19,11 +27,10 @@ cd PageHarvest
 python -m pip install .
 ```
 
-Install from the checkout; this project has not been published to PyPI.
 For JavaScript pages, install the optional browser support:
 
 ```sh
-python -m pip install ".[render]"
+python -m pip install "pageharvest[render]"
 python -m playwright install chromium
 ```
 
@@ -238,7 +245,7 @@ print(generator.generate_user_agent("windows"))
 
 The old module also has `ua()`, `profile()`, `generate_profile()`, cache
 provenance and optional disk caching. Explicit FALLBACK_CHROME_VERSION overrides
-remain supported. See [legacy configuration](docs/legacy-api.md).
+remain supported. See [legacy configuration](https://github.com/Sheekovic/PageHarvest/blob/main/docs/legacy-api.md).
 
 ```sh
 python -m pip install .
