@@ -1,118 +1,256 @@
-# ChromeMultiOSUA
+# PageHarvest
 
-ChromeMultiOSUA is a flexible Python module designed to generate realistic Google Chrome user agent strings for multiple operating systems, including Windows, macOS, Linux, Android, and iOS. The module retrieves the latest stable Chrome version from the official Google Version History API. It features configurable settings, robust logging and error handling, caching, and basic unit tests—all encapsulated in a modular, easy-to-integrate class.
+**Turn URLs into structured JSON or CSV, with one Python call or one terminal command.**
 
-## Features
+PageHarvest combines HTML/JSON extraction, browser profiles, persistent HTTP sessions,
+bounded retries, polite crawling, and optional JavaScript rendering. It grew out of
+ChromeMultiOSUA; the old `chrome_multi_os_ua` import still works.
 
-- **Cross-Platform Support:**  
-  Generate Chrome user agents for various operating systems:
-  - **Windows:** Windows 10 & Windows 11
-  - **macOS**
-  - **Linux**
-  - **Android**
-  - **iOS**
+**Start here:** [Documentation](docs/README.md) · [Quick start](docs/quickstart.md) ·
+[Practical recipes](docs/recipes.md) · [Runnable examples](docs/examples/README.md)
 
-- **Latest Chrome Version Retrieval:**  
-  Queries the official Google Version History API to get the latest stable Chrome version. Falls back to a randomly generated version if the API call fails.
+## Install
 
-- **Configurable Settings:**  
-  Easily adjust allowed OS options, version ranges, and other settings through a centralized configuration dictionary.
+Python 3.10 or newer:
 
-- **Robust Logging & Error Handling:**  
-  Utilizes Python's built-in logging module to capture key events and errors.
-
-- **Caching:**  
-  Caches user agents for repeated requests using Python's LRU cache decorator.
-
-- **Modular & Extensible:**  
-  Encapsulated in a single class (`UserAgentGenerator`) for easy import and extension in other projects.
-
-- **Basic Unit Testing:**  
-  Includes simple unit tests to ensure the generator produces valid user agent strings.
-
-## Installation
-
-Clone this repository or download the module files:
-
-```bash
-git clone https://github.com/Sheekovic/ChromeMultiOSUA.git
+```sh
+git clone https://github.com/Sheekovic/PageHarvest.git
+cd PageHarvest
+python -m pip install .
 ```
 
-Then, navigate into the directory:
+Install from the checkout; this project has not been published to PyPI.
+For JavaScript pages, install the optional browser support:
 
-```bash
-cd ChromeMultiOSUA
+```sh
+python -m pip install ".[render]"
+python -m playwright install chromium
 ```
 
-Install the required dependencies:
+## One URL to useful data
 
-```bash
-pip install -r requirements.txt
+```python
+from pageharvest import scrape
+
+page = scrape("https://example.com")
+print(page.title)
+print(page.text)
+print(page.links)
+print(page.structured_data)  # JSON-LD, when present
+print(page.ok, page.error)
 ```
 
-*Note:* This module requires Python 3.6 or later.
+HTML extraction automatically finds the title, metadata, main/article text,
+absolute links, JSON-LD blocks, and rel=next pagination. JSON endpoints return
+their decoded response in `page.data`. No API key or language model is required.
 
-## Usage
+## Extract exactly what you need
 
-Integrate the module into your project as follows:
+```python
+from pageharvest import Field, scrape
+
+page = scrape("https://example.com/products", fields={
+    "heading": Field("h1", required=True),
+    "prices": Field(".price", many=True),
+    "product_links": Field(".product a", attr="href", many=True),
+})
+
+print(page.fields)
+print(page.missing_fields)
+```
+
+A CSS string is shorthand for `Field(selector)`. Text is stripped and joined
+with spaces; attribute values are returned as written in the HTML.
+Missing optional fields become `None` or `[]`; missing required fields make
+`page.ok` false. Invalid selectors fail before network access.
+
+## Sessions, crawling and export
+
+```python
+from pageharvest import Scraper, export_csv, export_json
+
+with Scraper(delay=1) as scraper:
+    pages = list(scraper.scrape_many([
+        "https://example.com/one",
+        "https://example.com/two",
+    ]))
+    export_json(pages, "pages.json")
+    export_csv(pages, "pages.csv")
+
+    # Same-origin, breadth-first crawl. Failed pages count toward max_pages.
+    pages = list(scraper.crawl(
+        "https://example.com", max_pages=20, max_depth=2
+    ))
+```
+
+Use `pagination_only=True` to follow only `rel=next` links. Crawling removes
+fragments, deduplicates URLs, preserves query strings, and refuses cross-origin
+redirects. Export functions overwrite the named file. CSV contains
+URL/status/title/text/error plus `field:<name>` columns; use JSON for complete
+metadata, links, JSON-LD and JSON response bodies. Spreadsheet formula prefixes
+in CSV values are escaped.
+
+## Terminal usage
+
+```sh
+pageharvest https://example.com
+pageharvest https://example.com --field "heading=h1" -o page.json
+pageharvest https://example.com --crawl --max-pages 10 -o pages.json
+pageharvest https://example.com --field "title=h1" --format csv -o pages.csv
+pageharvest https://example.com --render auto --wait-for "main" -o rendered.json
+pageharvest https://example.com --browser firefox
+```
+
+`python -m pageharvest` works too. JSON goes to stdout by default; the summary
+goes to stderr. Exit codes: 0 for success, 1 for page/extraction failures,
+2 for invalid options or output errors, 130 for interruption. CLI fields are
+required. See `pageharvest --help`.
+
+## What makes it smart?
+
+- **Adaptive retries:** retries connection failures and 408/429/500/502/503/504.
+  Honors numeric/date Retry-After. If the requested wait exceeds the configured
+  limit, returns a failure rather than retrying early. Does not retry 401/403.
+- **Content-aware extraction:** handles HTML, JSON and plain text; reports
+  unsupported responses, malformed JSON and missing required fields.
+- **Rendering hints:** flags sparse pages with application/script markers.
+  This heuristic is not proof that JavaScript is needed.
+- **Optional rendering:** `render="auto"` invokes a browser for sparse HTML,
+  missing required fields, or an explicit `wait_for`. `render="always"` renders
+  successful HTML responses. Default `render="never"` keeps installation small.
+- **Session continuity:** reuses connections and cookies with one fixed HTTP
+  profile. Browser rendering exchanges domain-scoped cookies with that session.
+- **Predictable limits:** caps page count, crawl depth, redirects, retries,
+  HTTP body size and per-origin request rate; returns errors as data.
+
+For dynamic pages, supply the selector that signals readiness:
+
+```python
+page = scrape(
+    "https://example.com/app",
+    render="auto",
+    wait_for="#results .item",
+    fields={"items": Field("#results .item", many=True, required=True)},
+)
+```
+
+Rendering uses the real installed browser's native UA, not the synthetic HTTP
+profile. Chrome/Edge select Chromium, Firefox selects Firefox, and Safari
+selects WebKit. Install the corresponding Playwright engine. WebKit is not the
+Safari application, and desktop rendering does not emulate a mobile device.
+Without `wait_for`, readiness means DOM content loaded plus non-empty body text;
+apps with delayed updates may need an explicit selector.
+
+## Browser profiles
+
+```python
+from pageharvest import profile, ua
+
+print(ua("android", offline=True))
+print(ua(browser="firefox"))
+print(ua(browser="safari"))  # Defaults to macOS
+
+identity = profile("windows", browser="edge", version="154.0.4258.62")
+print(identity.user_agent)
+print(identity.version_source, identity.is_stale)
+headers = identity.headers()  # User-Agent only
+https_headers = identity.headers(client_hints=True)
+```
+
+| Browser | Supported profiles | Default version source |
+| --- | --- | --- |
+| Chrome | Windows, macOS, Linux, Android phone, iPhone | Live Google API, cache, then verified bundled snapshot |
+| Edge | Windows, macOS, Linux | Verified official release snapshot |
+| Firefox | Windows, macOS, Linux, Android phone | Verified official release snapshot |
+| Safari | macOS, iPhone | Historical Safari 18.6 profile |
+
+Unsupported combinations raise a clear error. Pin `version=` for reproducible
+profiles. Chrome/Edge require four numeric components; Firefox/Safari accept
+two to four. Firefox's UA reports major.0. Chrome desktop/Android UAs are reduced.
+
+The scraper uses bundled profiles by default, so construction does not depend on
+external version services. Supply `browser_profile=profile(...)` to choose live
+Chrome lookup or a pinned identity.
+
+Client Hints are optional low-entropy brand/version/platform/mobile headers for
+Chrome and Edge over HTTPS. Firefox, Safari and iOS profiles omit them. They do
+not model browser GREASE ordering, high-entropy hints, TLS or JavaScript
+fingerprints. No browser profile guarantees compatibility with every website.
+
+## Offline versions and persistence
+
+```python
+identity = profile("linux", cache_dir=".pageharvest-cache")
+offline = profile("linux", offline=True, cache_dir=".pageharvest-cache")
+```
+
+Chrome caches successful versions for one hour and failures for 60 seconds.
+Disk caching is opt-in, per-platform and endpoint-specific, uses atomic writes,
+and persists only successful lookups. Offline mode reuses disk data, then falls
+back to a bundled per-platform snapshot. Corrupt/unwritable caches do not prevent
+generation. No directories are created until a successful lookup is saved.
+
+Profiles record `version_source` (live/cached/bundled/pinned),
+`checked_at` (Unix timestamp or None), and `is_stale` at creation time.
+A pinned version is treated as intentional, not fresh-from-network.
+Bundled Firefox/Edge data was checked on 2026-10-08; Safari is explicitly
+historical. These versions age and are not silently described as current.
+The legacy generator additionally supports an explicit custom fallback.
+
+## Defaults and boundaries
+
+| Setting | Default |
+| --- | --- |
+| `timeout` | 20 seconds per Requests connect/read timeout |
+| `retries` | 2 retries after the initial attempt |
+| `delay` | 0.5 seconds between requests to an origin |
+| `max_retry_wait` | 30 seconds |
+| `max_bytes` | 5 MB of decoded HTTP body / final rendered HTML |
+| `respect_robots` | True |
+| `render` | "never" |
+| `client_hints` | False |
+
+Robots rules use the PageHarvest token, including wildcard rules and Crawl-delay.
+404/410 robots responses allow fetching; denied/unavailable robots stop fetching.
+Rules are cached for the scraper session. `respect_robots=False` (CLI:
+`--ignore-robots`) explicitly overrides this behavior.
+
+A Scraper is synchronous; use one instance per worker. Its public `session`
+is a Requests Session for explicit proxy/auth/header configuration. Raw
+Authorization/Cookie headers and session auth are restricted to the first
+scraped origin; cookie-jar cookies retain their own domain scope.
+
+HTTP timeouts are not a total job deadline. Browser resources are governed by
+Playwright; max_bytes caps the final DOM, not all browser network traffic.
+Rendering and robots requests add network operations beyond max_pages.
+The tool does not solve login/CAPTCHA challenges, invent missing field values,
+or automatically discover arbitrary pagination buttons.
+
+## Compatibility and development
+
+Existing usage remains valid:
 
 ```python
 from chrome_multi_os_ua import UserAgentGenerator
-
-# Create an instance of the generator
-generator = UserAgentGenerator()
-
-# Retrieve a user agent string for Windows (default)
-user_agent_windows = generator.generate_user_agent()
-print("Windows User Agent:", user_agent_windows)
-
-# Retrieve a user agent string for macOS
-user_agent_mac = generator.generate_user_agent(os_type="mac")
-print("macOS User Agent:", user_agent_mac)
-
-# Retrieve a user agent string for Linux
-user_agent_linux = generator.generate_user_agent(os_type="linux")
-print("Linux User Agent:", user_agent_linux)
+generator = UserAgentGenerator(offline=True)
+print(generator.generate_user_agent("windows"))
 ```
 
-For custom OS strings, provide a custom OS string directly:
+The old module also has `ua()`, `profile()`, `generate_profile()`, cache
+provenance and optional disk caching. Explicit FALLBACK_CHROME_VERSION overrides
+remain supported. See [legacy configuration](docs/legacy-api.md).
 
-```python
-custom_os = "Custom OS String"
-user_agent_custom = generator.generate_user_agent(custom_os=custom_os)
-print("Custom OS User Agent:", user_agent_custom)
+```sh
+python -m pip install .
+python -m unittest discover -v
 ```
 
-## Configuration
+Tests use mocked version feeds and a real local HTTP fixture server. Browser
+integration runs separately with `PAGEHARVEST_TEST_RENDER=1` after installing
+Chromium. CI covers Windows/Linux and Python 3.10, 3.13 and 3.14, plus Chromium.
 
-The module's configuration is defined in the `CONFIG` dictionary, including:
-
-- **OS_OPTIONS:**  
-  A dictionary mapping OS types (`windows`, `mac`, `linux`, `android`, `ios`) to lists of allowed OS strings.
-
-- **WEBKIT_VERSION:**  
-  The fixed WebKit version used in the user agent string.
-
-- **CHROME_VERSION_RANGE:**  
-  Defines the range for Chrome version components (major, build, and patch numbers). This is used only as a fallback if the API call fails.
-
-- **CHROME_VERSION_API:**  
-  The URL used to query the latest stable Chrome version.
-
-Feel free to modify these settings to suit your needs.
-
-## Contributing
-
-Contributions are welcome! Please open issues or submit pull requests for any bugs, feature requests, or enhancements.
-
-1. Fork the repository.
-2. Create a new branch (`git checkout -b feature/YourFeature`).
-3. Commit your changes (`git commit -am 'Add some feature'`).
-4. Push to the branch (`git push origin feature/YourFeature`).
-5. Create a new Pull Request.
-
-## Acknowledgements
-
-This module was inspired by the need for realistic user agent generation in web scraping and automation projects and is built to be flexible and easily integrated into various applications.
-
-With this update, your module now actively fetches the latest stable Chrome version from the Google Version History API. This provides more accurate and current user agent strings for your applications.
+Protocol references:
+[Chromium UA reduction](https://www.chromium.org/updates/ua-reduction/),
+[Chrome Client Hints](https://developer.chrome.com/docs/privacy-security/user-agent-client-hints),
+[Edge UA guidance](https://learn.microsoft.com/en-us/microsoft-edge/web-platform/user-agent-guidance),
+[Firefox UA reference](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/User-Agent/Firefox).
