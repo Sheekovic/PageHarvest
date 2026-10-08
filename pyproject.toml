@@ -18,6 +18,8 @@ pageharvest = "pageharvest.cli:main"
 
 [project.urls]
 Repository = "https://github.com/Sheekovic/PageHarvest"
+Documentation = "https://github.com/Sheekovic/PageHarvest/tree/main/docs"
+Issues = "https://github.com/Sheekovic/PageHarvest/issues"
 
 [tool.setuptools]
 py-modules = ["chrome_multi_os_ua"]

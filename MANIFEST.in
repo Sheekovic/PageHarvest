@@ -1,0 +1,2 @@
+recursive-include docs *.md *.py *.html *.json *.txt
+include test.py test_chrome_multi_os_ua.py test_pageharvest.py
